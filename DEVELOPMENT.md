@@ -101,6 +101,37 @@ Resolution order: `FRONTEND_TAG` (or `BACKEND_TAG`) → `IMAGE_TAG` → `latest`
 
 The container reads `BACKEND_URL` at start time and substitutes it into the nginx config via the official `nginx:alpine` envsubst hook, so the same image works for compose, Railway, and direct `docker run`.
 
+### Building frontend from local source
+
+For iterating on Vue source (theme tweaks, debugging, customised UI), drop the source into the gitignored `./QuantDinger-Vue/` slot at the repo root and switch to `--build`. The `frontend` service in `docker-compose.yml` already declares both `image:` and `build:`, so no override file is needed:
+
+```bash
+# Expected layout — clone QuantDinger-Vue into ./QuantDinger-Vue/ at this repo root:
+#   QuantDinger/
+#     QuantDinger-Vue/                <- gitignored; clone goes here
+#     backend_api_python/
+#     docker-compose.yml
+
+git clone https://github.com/brokermr810/QuantDinger-Vue.git QuantDinger-Vue
+
+docker compose up -d --build           # builds frontend from ./QuantDinger-Vue, pulls everything else
+docker compose build frontend          # rebuild after editing Vue source
+docker compose restart frontend        # apply runtime config changes only
+```
+
+Key behaviour:
+
+- **Without `--build`**: Compose pulls `ghcr.io/.../quantdinger-frontend:<tag>` as usual; the `./QuantDinger-Vue/` path is referenced lazily and is allowed to be missing.
+- **With `--build`**: Compose builds from `./QuantDinger-Vue/` (or `FRONTEND_SRC_PATH` if set) and tags the result with whatever `FRONTEND_TAG` / `IMAGE_TAG` resolves to. The locally built image then satisfies `docker compose up` for subsequent runs until you `docker compose pull frontend` to overwrite it.
+
+Source path override (keep the Vue clone somewhere else than `./QuantDinger-Vue/`):
+
+```bash
+FRONTEND_SRC_PATH=/abs/path/to/QuantDinger-Vue docker compose up -d --build
+```
+
+Default backend behaviour is unaffected — it still builds from this repo's `backend_api_python/`. Only the frontend service has the new dual `image:` + `build:` declaration.
+
 ## Adding a New Data Source
 
 1. Create `backend_api_python/app/data_sources/<name>.py` implementing a class

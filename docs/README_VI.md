@@ -208,6 +208,7 @@ flowchart LR
      docker compose -f docker-compose.ghcr.yml up -d
      ```
      Image mặc định: `ghcr.io/brokermr810/quantdinger-{backend,frontend}:latest`. Ghim đồng thời cả hai bằng `IMAGE_TAG=v3.0.9` trong `.env` cục bộ, hoặc ghim từng bên với `BACKEND_TAG` / `FRONTEND_TAG`.
+   - **Phát triển frontend cục bộ**: clone `QuantDinger-Vue` vào `./QuantDinger-Vue/` (đã gitignore) rồi chạy `docker compose up -d --build`. Chi tiết xem [README tiếng Anh](../README.md#alternative-build-the-frontend-from-vue-source).
 4. **Web:** `http://localhost:8888` · **Sức khỏe API:** `http://localhost:5000/api/health`
 5. Đổi mật khẩu quản trị mặc định trước production. Đặt **`FRONTEND_URL`** trong `backend_api_python/.env` đúng URL thực tế.
 

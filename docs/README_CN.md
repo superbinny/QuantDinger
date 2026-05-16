@@ -346,6 +346,17 @@ IMAGE_TAG=v3.0.9
 
 Tag 解析优先级：`BACKEND_TAG` / `FRONTEND_TAG` → `IMAGE_TAG` → `latest`。默认镜像：`ghcr.io/brokermr810/quantdinger-backend:latest` + `ghcr.io/brokermr810/quantdinger-frontend:latest`。
 
+#### 备选方案：从 Vue 源码本地构建前端
+
+如果你有 **QuantDinger-Vue** 仓库的访问权限，想改 UI 源码（换主题、二开、调试），把它克隆到本仓根目录下的 `./QuantDinger-Vue/`（已 gitignore），让 Compose 直接从那里构建：
+
+```bash
+git clone https://github.com/brokermr810/QuantDinger-Vue.git QuantDinger-Vue
+docker compose up -d --build      # frontend 从 ./QuantDinger-Vue 本地构建
+```
+
+不带 `--build` 时 Compose 照常从 GHCR 拉镜像——`./QuantDinger-Vue/` 是惰性求值，不存在也无所谓。想换路径就设 `FRONTEND_SRC_PATH=/abs/path/to/QuantDinger-Vue`。本地构建出来的镜像 tag 仍走 `FRONTEND_TAG` / `IMAGE_TAG` 那套规则，跟其它服务无缝衔接，不用改其它配置。
+
 ### 5）验证与登录
 
 | 检查项 | 地址 / 命令 |
@@ -498,10 +509,6 @@ QuantDinger/
 │   ├── migrations/init.sql  # 数据库初始化
 │   ├── env.example          # 主配置模板
 │   └── Dockerfile
-├── frontend/                # 预构建 Web（源码：QuantDinger-Vue；移动端：QuantDinger-Mobile）
-│   ├── dist/
-│   ├── Dockerfile
-│   └── nginx.conf
 ├── docs/                    # 产品、策略与部署文档
 ├── docker-compose.yml
 ├── LICENSE

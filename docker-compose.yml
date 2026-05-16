@@ -136,14 +136,23 @@ services:
       retries: 3
 
   # ========================
-  # Frontend (Nginx serving prebuilt SPA, pulled from GHCR)
+  # Frontend (Nginx serving prebuilt SPA)
   # ========================
+  # Default behaviour: pull the prebuilt multi-arch image from GHCR.
+  # Local iteration: clone QuantDinger-Vue into `./QuantDinger-Vue/`
+  # (gitignored) and run `docker compose up --build` — Compose then
+  # builds from that source tree and tags the result with the same
+  # image name. The build context is evaluated lazily, so users who
+  # only pull never need the `./QuantDinger-Vue/` directory to exist.
   frontend:
     # Tag resolution (highest precedence wins):
     #   FRONTEND_TAG   — per-side override, decouples FE from BE
     #   IMAGE_TAG      — unified knob, sets both FE and BE (BE only relevant in ghcr.yml)
     #   latest         — fallback
     image: ${FRONTEND_IMAGE:-ghcr.io/brokermr810/quantdinger-frontend}:${FRONTEND_TAG:-${IMAGE_TAG:-latest}}
+    build:
+      context: ${FRONTEND_SRC_PATH:-./QuantDinger-Vue}
+      dockerfile: Dockerfile
     container_name: quantdinger-frontend
     restart: unless-stopped
     ports:

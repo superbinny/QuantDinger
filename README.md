@@ -347,6 +347,17 @@ IMAGE_TAG=v3.0.9
 
 Tag resolution: `BACKEND_TAG` / `FRONTEND_TAG` → `IMAGE_TAG` → `latest`. Defaults: `ghcr.io/brokermr810/quantdinger-backend:latest` + `ghcr.io/brokermr810/quantdinger-frontend:latest`.
 
+#### Alternative: build the frontend from Vue source
+
+If you have access to the **QuantDinger-Vue** repo and want to iterate on UI source (theme tweaks, forks, debugging) instead of pulling the published image, clone it into the `./QuantDinger-Vue/` slot at the repo root (gitignored) and let Compose build from there:
+
+```bash
+git clone https://github.com/brokermr810/QuantDinger-Vue.git QuantDinger-Vue
+docker compose up -d --build      # frontend builds from ./QuantDinger-Vue
+```
+
+Without `--build` Compose pulls the GHCR image as usual — the `./QuantDinger-Vue/` directory is referenced lazily and may not exist. Point `FRONTEND_SRC_PATH=/abs/path/to/QuantDinger-Vue` if you'd rather keep the source somewhere else. The locally built image is tagged the same way as the published one (`FRONTEND_TAG` / `IMAGE_TAG` rules apply), so it slots into the rest of the stack with no further changes.
+
 ### 5) Verify and sign in
 
 | Check | URL / command |

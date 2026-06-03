@@ -367,7 +367,7 @@ class ForexDataSource(BaseDataSource):
                 '1D': mt5.TIMEFRAME_D1, '1W': mt5.TIMEFRAME_W1,
                 '1M': mt5.TIMEFRAME_MN1,
             }
-            tf = _TF_MAP.get(timeframe)
+            tf = _TF_MAP.get(timeframe) or _TF_MAP.get(timeframe.upper())
             if tf is None:
                 return []
             if before_time:

@@ -18,6 +18,7 @@ from app.services.live_trading.kraken import KrakenClient
 from app.services.live_trading.kraken_futures import KrakenFuturesClient
 from app.services.live_trading.kucoin import KucoinFuturesClient, KucoinSpotClient
 from app.services.live_trading.okx import OkxClient, to_okx_swap_inst_id
+from app.services.mt5_trading.client import MT5Client, OrderResult as MT5OrderResult
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -230,6 +231,21 @@ def place_grid_limit_order(
             pos_side=pos_side or ("long" if sd == "buy" else "short"),
             client_order_id=coid or None,
         )
+    if isinstance(client, MT5Client):
+        result: MT5OrderResult = client.place_limit_order(
+            symbol=str(symbol),
+            side=sd,
+            volume=qty,
+            price=px,
+            comment=coid or "QuantDinger Grid",
+        )
+        return LiveOrderResult(
+            exchange_id="mt5",
+            exchange_order_id=str(result.order_id or ""),
+            filled=qty if result.success else 0.0,
+            avg_price=float(result.price or 0),
+            raw={"status": result.status, "message": result.message},
+        )
     raise LiveTradingError(f"Unsupported client for grid limit: {type(client)}")
 
 
@@ -249,6 +265,14 @@ def cancel_grid_order(
             ord_id=str(exchange_order_id or ""),
             cl_ord_id=str(client_order_id or ""),
         )
+        return
+    if isinstance(client, MT5Client):
+        try:
+            ticket = int(exchange_order_id or 0)
+            if ticket > 0:
+                client.cancel_order(ticket)
+        except Exception:
+            pass
         return
     if hasattr(client, "cancel_order"):
         kwargs: Dict[str, Any] = {}

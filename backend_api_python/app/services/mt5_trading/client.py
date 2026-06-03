@@ -9,7 +9,7 @@ import time
 import threading
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.utils.logger import get_logger
 from app.services.mt5_trading.symbols import normalize_symbol, parse_symbol
@@ -761,6 +761,84 @@ class MT5Client:
             logger.error(f"Get quote failed: {e}")
             return {"success": False, "error": str(e)}
     
+    def get_rates(
+        self,
+        symbol: str,
+        timeframe: str,
+        count: int = 500,
+        before_time: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch K-line bars from MT5 terminal.
+
+        Args:
+            symbol: Symbol code (e.g. "XAUUSD")
+            timeframe: Timeframe string (e.g. "1m", "5m", "15m", "1H", "4H", "1D")
+            count: Number of bars to fetch
+            before_time: Unix timestamp — fetch bars before this time
+
+        Returns:
+            List of bar dicts with keys: time, open, high, low, close, tick_volume
+        """
+        try:
+            self._ensure_connected()
+            _ensure_mt5()
+
+            symbol = normalize_symbol(symbol)
+
+            # Map timeframe string to MT5 constant
+            _TF_MAP = {
+                '1m': mt5.TIMEFRAME_M1,
+                '5m': mt5.TIMEFRAME_M5,
+                '15m': mt5.TIMEFRAME_M15,
+                '30m': mt5.TIMEFRAME_M30,
+                '1H': mt5.TIMEFRAME_H1,
+                '4H': mt5.TIMEFRAME_H4,
+                '1D': mt5.TIMEFRAME_D1,
+                '1W': mt5.TIMEFRAME_W1,
+                '1M': mt5.TIMEFRAME_MN1,
+            }
+            tf = _TF_MAP.get(timeframe)
+            if tf is None:
+                logger.warning(f"MT5 get_rates: unsupported timeframe {timeframe}")
+                return []
+
+            # Ensure symbol is available in MarketWatch
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                logger.warning(f"MT5 get_rates: symbol not found {symbol}")
+                return []
+            if not symbol_info.visible:
+                mt5.symbol_select(symbol, True)
+
+            if before_time:
+                # Fetch bars before a specific timestamp
+                date_from = datetime.fromtimestamp(int(before_time)) - timedelta(days=30)
+                rates = mt5.copy_rates_from(symbol, tf, date_from, count)
+            else:
+                # Fetch most recent bars
+                rates = mt5.copy_rates_from_pos(symbol, tf, 0, count)
+
+            if rates is None or len(rates) == 0:
+                logger.warning(f"MT5 get_rates: no data for {symbol} {timeframe}")
+                return []
+
+            bars = []
+            for r in rates:
+                bars.append({
+                    'time': int(r[0]),
+                    'open': float(r[1]),
+                    'high': float(r[2]),
+                    'low': float(r[3]),
+                    'close': float(r[4]),
+                    'tick_volume': int(r[5]),
+                })
+            return bars
+
+        except Exception as e:
+            logger.error(f"MT5 get_rates failed for {symbol}: {e}")
+            return []
+
     def get_symbols(self, group: str = "*") -> List[Dict[str, Any]]:
         """
         Get available symbols.

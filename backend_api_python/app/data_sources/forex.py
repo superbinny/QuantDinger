@@ -129,7 +129,7 @@ class ForexDataSource(BaseDataSource):
     def get_ticker(self, symbol: str) -> Dict[str, Any]:
         """
         获取外汇实时报价
-        Priority: Twelve Data → Tiingo → yfinance
+        Priority: MT5 terminal → Twelve Data → Tiingo → yfinance
         """
         symbol = normalize_forex_pair_symbol(symbol)
         cache_key = f"ticker_{symbol}"
@@ -139,6 +139,7 @@ class ForexDataSource(BaseDataSource):
                 return cached
 
         for fetcher in (
+            self._get_ticker_mt5,
             self._get_ticker_twelvedata,
             self._get_ticker_tiingo,
             self._get_ticker_yfinance,
@@ -154,6 +155,38 @@ class ForexDataSource(BaseDataSource):
                 logger.debug("Forex ticker fetcher %s failed for %s: %s", fetcher.__name__, symbol, e)
 
         return {'last': 0, 'symbol': symbol}
+
+    def _get_ticker_mt5(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Fetch forex quote from local MT5 terminal (Tier 0)."""
+        try:
+            import MetaTrader5 as mt5
+            if mt5.terminal_info() is None:
+                if not mt5.initialize():
+                    return None
+            if mt5.terminal_info() is None or not mt5.terminal_info().connected:
+                return None
+            # Get tick from MT5
+            tick = mt5.symbol_info_tick(symbol)
+            if tick is None:
+                return None
+            bid = float(tick.bid or 0)
+            ask = float(tick.ask or 0)
+            last = float(tick.last or ask or bid or 0)
+            if last <= 0:
+                return None
+            return {
+                'symbol': symbol,
+                'last': last,
+                'bid': bid,
+                'ask': ask,
+                'change': 0,
+                'changePercent': 0,
+                'high': 0,
+                'low': 0,
+            }
+        except Exception as e:
+            logger.debug("MT5 ticker failed for %s: %s", symbol, e)
+            return None
 
     def _get_ticker_twelvedata(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Fetch forex quote from Twelve Data /quote endpoint."""
@@ -311,6 +344,58 @@ class ForexDataSource(BaseDataSource):
         """获取时间周期对应的秒数"""
         return TIMEFRAME_SECONDS.get(timeframe, 86400)
     
+    def _get_kline_mt5(
+        self, symbol: str, timeframe: str, limit: int, before_time: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch forex K-lines from local MT5 terminal (Tier 0).
+
+        Uses MetaTrader5 directly — initializes if needed (no credentials
+        required when terminal is already running and logged in)."""
+        try:
+            import MetaTrader5 as mt5
+            # MT5 may need initialization in this process
+            if mt5.terminal_info() is None:
+                if not mt5.initialize():
+                    return []
+            if mt5.terminal_info() is None or not mt5.terminal_info().connected:
+                return []
+            symbol = normalize_forex_pair_symbol(symbol)
+            _TF_MAP = {
+                '1m': mt5.TIMEFRAME_M1, '5m': mt5.TIMEFRAME_M5,
+                '15m': mt5.TIMEFRAME_M15, '30m': mt5.TIMEFRAME_M30,
+                '1H': mt5.TIMEFRAME_H1, '4H': mt5.TIMEFRAME_H4,
+                '1D': mt5.TIMEFRAME_D1, '1W': mt5.TIMEFRAME_W1,
+                '1M': mt5.TIMEFRAME_MN1,
+            }
+            tf = _TF_MAP.get(timeframe)
+            if tf is None:
+                return []
+            if before_time:
+                from datetime import timedelta
+                # Use utcfromtimestamp — MT5 timestamps are UTC, and
+                # datetime.fromtimestamp() interprets the epoch as local time (CST),
+                # shifting the fetch window 8h forward and missing bars.
+                dt = datetime.utcfromtimestamp(int(before_time)) - timedelta(days=30)
+                rates = mt5.copy_rates_from(symbol, tf, dt, min(limit, 5000))
+            else:
+                rates = mt5.copy_rates_from_pos(symbol, tf, 0, min(limit, 5000))
+            if rates is None or len(rates) == 0:
+                return []
+            bars = []
+            for r in rates:
+                bars.append({
+                    'time': int(r[0]),
+                    'open': float(r[1]),
+                    'high': float(r[2]),
+                    'low': float(r[3]),
+                    'close': float(r[4]),
+                    'tick_volume': int(r[5]),
+                })
+            return bars
+        except Exception as e:
+            logger.debug("MT5 forex kline failed for %s: %s", symbol, e)
+            return []
+
     def get_kline(
         self,
         symbol: str,
@@ -321,10 +406,11 @@ class ForexDataSource(BaseDataSource):
     ) -> List[Dict[str, Any]]:
         """
         获取外汇K线数据
-        Priority: Twelve Data → Tiingo → yfinance
+        Priority: MT5 (local) → Twelve Data → Tiingo → yfinance
         """
         symbol = normalize_forex_pair_symbol(symbol)
         for fetcher in (
+            self._get_kline_mt5,
             self._get_kline_twelvedata,
             self._get_kline_tiingo,
             self._get_kline_yfinance,

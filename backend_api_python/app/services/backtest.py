@@ -2065,11 +2065,14 @@ class BacktestService:
         raw_bars = max(1, math.ceil(total_seconds / tf_seconds))
         limit = int(math.ceil(raw_bars * 1.15) + 200)
 
-        # Earliest candle we need (backtest may span up to ~2y; align fetch window to real start)
-        after_time = int((start_date - timedelta(days=1)).timestamp())
+        # Earliest candle we need (backtest may span up to ~2y; align fetch window to real start).
+        # Use UTC epoch so MT5 / TwelveData etc see the correct window — naive .timestamp()
+        # interprets the datetime as local time (CST=UTC+8), shifting the window 8h forward.
+        from datetime import timezone as _dt_tz
+        after_time = int((start_date.replace(tzinfo=_dt_tz.utc) - timedelta(days=1)).timestamp())
 
         # Calculate before_time (end date + 1 day)
-        before_time = int((end_date + timedelta(days=1)).timestamp())
+        before_time = int((end_date.replace(tzinfo=_dt_tz.utc) + timedelta(days=1)).timestamp())
 
         cache_key = f"{market}:{symbol}:{timeframe}:{start_date.date()}:{end_date.date()}"
         cached = _kline_cache.get(cache_key)
@@ -2110,6 +2113,10 @@ class BacktestService:
             if df.empty:
                 logger.warning(f"DataFrame is empty after conversion")
                 return pd.DataFrame()
+            
+            # Normalise column names: MT5 uses tick_volume; the indicator env expects volume
+            if 'tick_volume' in df.columns and 'volume' not in df.columns:
+                df = df.rename(columns={'tick_volume': 'volume'})
             
             # Handle time column - could be seconds or milliseconds
             if 'time' not in df.columns:
@@ -2255,7 +2262,7 @@ class BacktestService:
                 'high': df_for_exec['high'],
                 'low': df_for_exec['low'],
                 'close': df_for_exec['close'],
-                'volume': df_for_exec['volume'],
+                'volume': df_for_exec.get('volume', df_for_exec.get('tick_volume', pd.Series(0, index=df_for_exec.index))),
                 'signals': pd.Series(0, index=df_for_exec.index),
                 'np': np,
                 'pd': pd,
@@ -2314,11 +2321,14 @@ class BacktestService:
             # This keeps indicator scripts simple and consistent (chart=buy/sell, execution=normalized in backend).
             output_obj = exec_env.get('output')
             has_output_signals = isinstance(output_obj, dict) and isinstance(output_obj.get('signals'), list) and len(output_obj.get('signals')) > 0
-            if has_output_signals and not all(col in executed_df.columns for col in ['buy', 'sell']):
-                raise ValueError(
-                    "Invalid indicator script: output['signals'] is provided, but df['buy'] and df['sell'] are missing. "
-                    "Please set df['buy'] and df['sell'] as boolean columns (len == len(df))."
-                )
+            if has_output_signals:
+                has_4way = all(col in executed_df.columns for col in ['open_long', 'close_long', 'open_short', 'close_short'])
+                has_buy_sell = all(col in executed_df.columns for col in ['buy', 'sell'])
+                if not has_4way and not has_buy_sell:
+                    raise ValueError(
+                        "Invalid indicator script: output['signals'] is provided, but no signal columns found. "
+                        "Please set either df['buy']/df['sell'] or df['open_long']/df['close_long']/df['open_short']/df['close_short'] as boolean columns."
+                    )
             
             # Extract signals from executed df
             if all(col in executed_df.columns for col in ['open_long', 'close_long', 'open_short', 'close_short']):

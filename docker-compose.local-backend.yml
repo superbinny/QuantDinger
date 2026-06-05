@@ -1,0 +1,8 @@
+# docker-compose.local-backend.yml
+# 用于本地运行后端，Docker 只运行前端的情况
+# 用法: docker compose -f docker-compose.yml -f docker-compose.local-backend.yml up -d frontend
+
+services:
+  frontend:
+    # 移除对 backend 的依赖，因为后端在本地运行
+    depends_on: []
